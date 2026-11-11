@@ -11,83 +11,72 @@
   html,body{margin:0;height:100%;background:#120a1f;overflow:hidden;touch-action:none;
     user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
   body{display:flex;align-items:center;justify-content:center;font-family:"Press Start 2P",monospace}
-  #wrap{display:grid;grid-template-areas:"game";place-items:center;gap:14px}
-  canvas{grid-area:game;display:block;image-rendering:pixelated;
+  #wrap{position:relative;line-height:0}
+  canvas{display:block;image-rendering:pixelated;
     box-shadow:0 0 0 4px #2a1840,0 0 0 8px #120a1f,0 0 0 10px #ff3b6b55,0 12px 50px #000}
-  .pad{display:none}
 
-  /* ---- handheld console shell (touch devices) ---- */
-  body.touch #wrap{grid-template-areas:"game game" "left right";grid-template-columns:1fr 1fr;
-    padding:16px 14px 18px;border-radius:26px;
-    background:linear-gradient(160deg,#4a2b70,#2a1744 60%,#1e1032);
-    box-shadow:inset 0 2px 0 #7a52a8,inset 0 -4px 0 #140a22,0 14px 40px #000}
-  body.touch canvas{box-shadow:0 0 0 3px #120a1f,0 0 0 6px #6b4a96}
-  body.touch .pad{display:flex;align-items:center;justify-content:center;gap:16px}
-  #padL{grid-area:left} #padR{grid-area:right}
-  #padL,#padR{zoom:var(--k,1)}
-  body.touch.side #wrap{grid-template-areas:"left game right";grid-template-columns:auto auto auto;padding:12px 18px}
+  /* ---- virtual joystick (bottom-right, over the game) ---- */
+  #joy{position:absolute;right:var(--jm);bottom:var(--jm);width:var(--js);height:var(--js);border-radius:50%;
+    background:radial-gradient(circle,rgba(255,255,255,.14),rgba(255,255,255,.05) 68%,rgba(0,0,0,.12));
+    border:2px solid rgba(255,255,255,.45);box-shadow:0 0 0 1px rgba(0,0,0,.3),inset 0 0 20px rgba(0,0,0,.3);
+    touch-action:none;opacity:.6;transition:opacity .15s,border-color .15s;cursor:grab;z-index:3}
+  #joy::before{content:"";position:absolute;inset:22%;border-radius:50%;border:1px dashed rgba(255,255,255,.2)}
+  #joy.on{opacity:.95;border-color:rgba(255,120,170,.9);cursor:grabbing}
+  #knob{position:absolute;left:28%;top:28%;width:44%;height:44%;border-radius:50%;pointer-events:none;
+    background:radial-gradient(circle at 35% 30%,#ffffff,#ddd6ec 55%,#9a90b4);
+    box-shadow:0 4px 10px rgba(0,0,0,.5),inset 0 -3px 0 rgba(0,0,0,.15);transition:transform .14s ease-out}
+  #joy.on #knob{transition:none;background:radial-gradient(circle at 35% 30%,#ffd6e4,#ff6b93 55%,#c81e4f);
+    box-shadow:0 0 16px #ff3b6b,inset 0 -3px 0 rgba(0,0,0,.2)}
+  /* phone held upright: the game is short, so the stick sits in the empty space below it */
+  body.portrait #joy{bottom:auto;top:calc(100% + 28px);right:4px;opacity:.85}
 
-  /* D-pad */
-  #dpad{position:relative;width:138px;height:138px;touch-action:none}
-  #dpad::before,#dpad::after{content:"";position:absolute;background:#22202c;border-radius:8px;
-    box-shadow:inset 0 -4px 0 #111018,inset 0 2px 0 #3c3a4c,0 4px 0 #0c0a14}
-  #dpad::before{left:46px;top:0;width:46px;height:138px}
-  #dpad::after{top:46px;left:0;width:138px;height:46px}
-  #dpad span{position:absolute;z-index:2;width:46px;height:46px;display:flex;align-items:center;justify-content:center;
-    color:#6d6a85;font-size:14px;pointer-events:none;transition:color .05s}
-  #dpad .u{left:46px;top:0} #dpad .d{left:46px;bottom:0} #dpad .l{left:0;top:46px} #dpad .r{right:0;top:46px}
-  #dpad i{position:absolute;z-index:2;left:58px;top:58px;width:22px;height:22px;border-radius:50%;background:#1a1822;pointer-events:none}
-  #dpad.pu .u,#dpad.pd .d,#dpad.pl .l,#dpad.pr .r{color:#ff6b93;text-shadow:0 0 8px #ff3b6b}
-
-  /* A / B buttons */
-  .btns{display:flex;gap:14px;transform:rotate(-18deg)}
-  .round{width:66px;height:66px;border-radius:50%;border:0;font:inherit;font-size:18px;color:#fff;
-    background:radial-gradient(circle at 35% 30%,#ff7aa0,#e0204f 60%,#9c0f33);
-    box-shadow:inset 0 -5px 0 #7a0a26,0 5px 0 #0c0a14;touch-action:none;position:relative}
-  .round.b{background:radial-gradient(circle at 35% 30%,#b99cff,#6c42d6 60%,#3f2290);box-shadow:inset 0 -5px 0 #2b1766,0 5px 0 #0c0a14}
-  .round.down{transform:translateY(4px);box-shadow:inset 0 -2px 0 #7a0a26,0 1px 0 #0c0a14}
-  .round small{position:absolute;left:50%;top:76px;transform:translateX(-50%);font-size:7px;color:#c9b8ff;white-space:nowrap}
-  .side{display:flex;flex-direction:column;align-items:center;gap:26px}
-  .pill{border:0;font:inherit;font-size:7px;color:#c9b8ff;background:#1a1028;padding:8px 12px;border-radius:12px;
-    box-shadow:inset 0 -2px 0 #0c0716;touch-action:none}
-  .pill.down{transform:translateY(2px)}
-  button{cursor:pointer;outline:none} #dpad{cursor:pointer}
+  /* ---- small round icon buttons (top-right, under the HUD) ---- */
+  .ico{position:absolute;top:var(--hud);width:var(--ib);height:var(--ib);border-radius:50%;border:0;padding:0;
+    display:grid;place-items:center;background:rgba(20,8,35,.62);box-shadow:0 0 0 2px rgba(255,255,255,.28);
+    cursor:pointer;outline:none;touch-action:none;z-index:3;transition:transform .08s}
+  .ico:active,.ico.down{transform:scale(.9)}
+  .ico svg{width:58%;height:58%;fill:#fff;stroke:#fff}
+  #bS{right:8px} #bP{right:calc(var(--ib) + 16px)}
+  body.st-over #joy,body.st-over #bP{opacity:0;pointer-events:none}   /* keep the SAVE PIC button clear */
+  #bS .x{display:none} body.muted #bS .w{display:none} body.muted #bS .x{display:inline}
+  body.muted #bS{box-shadow:0 0 0 2px #ff5a6a}
 </style>
 </head>
 <body>
 <div id="wrap">
   <canvas id="g" width="1280" height="720"></canvas>
-  <div id="padL" class="pad">
-    <div id="dpad"><span class="u">▲</span><span class="d">▼</span><span class="l">◀</span><span class="r">▶</span><i></i></div>
-  </div>
-  <div id="padR" class="pad">
-    <div class="side">
-      <div class="btns">
-        <button id="bB" class="round b">B<small>SOUND</small></button>
-        <button id="bA" class="round">A<small>START</small></button>
-      </div>
-      <button id="bP" class="pill">PAUSE</button>
-    </div>
-  </div>
+  <button id="bP" class="ico" aria-label="Pause">
+    <svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" stroke="none"/><rect x="14" y="5" width="4" height="14" rx="1" stroke="none"/></svg>
+  </button>
+  <button id="bS" class="ico" aria-label="Sound">
+    <svg viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3z" stroke="none"/>
+      <path class="w" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" fill="none" stroke-width="2" stroke-linecap="round"/>
+      <path class="x" d="M16 9l6 6M22 9l-6 6" fill="none" stroke-width="2.2" stroke-linecap="round"/></svg>
+  </button>
+  <div id="joy"><div id="knob"></div></div>
 </div>
 <script>
 "use strict";
 const W = 320, H = 180, FLOOR = H - 24;
 const cv = document.getElementById('g'), ctx = cv.getContext('2d');
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window || location.search.includes('pad');
-document.body.classList.add('touch');   // console controller is always shown (mouse, touch, or keyboard all work)
 let scale = 1, R = 4;   // scale = CSS px per game pixel, R = canvas px per game pixel
 function fit() {
-  // controller size scales with the screen; pick the layout (pads beside vs below) that gives the biggest game
-  const k = clamp(Math.min(innerWidth, innerHeight) / 520, .6, 1);
-  document.documentElement.style.setProperty('--k', k);
-  const sideS = Math.min((innerWidth - 24 - 2 * 160 * k - 30) / W, (innerHeight - 40) / H);
-  const stackS = Math.min((innerWidth - 40) / W, (innerHeight - 40 - 190 * k) / H);
-  const side = sideS >= stackS;
-  document.body.classList.toggle('side', side);
-  scale = Math.max(.5, side ? sideS : stackS);
-  cv.style.width = Math.round(W * scale) + 'px';
-  cv.style.height = Math.round(H * scale) + 'px';
+  const portrait = innerHeight > innerWidth * 1.15;
+  document.body.classList.toggle('portrait', portrait);
+  // upright phones keep room under the game for the joystick
+  const ah = portrait ? Math.min(innerHeight - 16, innerHeight - 40 - Math.min(innerWidth * .42, 170)) : innerHeight - 16;
+  scale = Math.max(.5, Math.min((innerWidth - 16) / W, ah / H));
+  const gw = Math.round(W * scale), gh = Math.round(H * scale);
+  cv.style.width = gw + 'px';
+  cv.style.height = gh + 'px';
+  // size the controls to the screen
+  const js = portrait ? clamp(innerWidth * .38, 110, 160) : clamp(Math.min(gw, gh) * .3, 96, 150);
+  const st = document.documentElement.style;
+  st.setProperty('--js', Math.round(js) + 'px');
+  st.setProperty('--jm', Math.round(js * .14) + 'px');
+  st.setProperty('--ib', Math.round(clamp(gh * .07, 24, 42)) + 'px');
+  st.setProperty('--hud', Math.round(15 * scale + 6) + 'px');
   const r = clamp(Math.ceil(scale * (devicePixelRatio || 1)), 2, 6);
   if (r !== R || cv.width !== W * r) { R = r; cv.width = W * R; cv.height = H * R; }
   ctx.imageSmoothingEnabled = false;
@@ -453,7 +442,7 @@ addEventListener('keydown', e => {
   }
   if ((e.key === 's' || e.key === 'S') && state === 'over' && overT > .8) savePic();
   if ((e.key === 'p' || e.key === 'P' || e.key === 'Escape') && (state === 'play' || state === 'pause')) state = state === 'play' ? 'pause' : 'play';
-  if (e.key === 'm' || e.key === 'M') muted = !muted;
+  if (e.key === 'm' || e.key === 'M') setMuted(!muted);
 });
 addEventListener('keyup', e => { if (MAP[e.key]) K[MAP[e.key]] = false; });
 addEventListener('blur', () => { for (const k in K) K[k] = false; if (state === 'play') state = 'pause'; });
@@ -486,44 +475,44 @@ addEventListener('pointermove', e => {
 addEventListener('pointerup', () => drag = null);
 addEventListener('contextmenu', e => e.preventDefault());
 
-/* ---- on-screen console controls ---- */
-const dpad = document.getElementById('dpad');
-function dpadSet(e) {
-  const r = dpad.getBoundingClientRect();
-  const dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
-  K.l = K.r = K.u = K.d = false;
-  if (Math.hypot(dx, dy) > r.width * .1) {
-    const oct = Math.round(Math.atan2(dy, dx) / (Math.PI / 4));   // 8-way
-    const dirs = { 0: 'r', 1: 'rd', 2: 'd', 3: 'ld', 4: 'l', '-4': 'l', '-3': 'lu', '-2': 'u', '-1': 'ru' };
-    for (const c of dirs[oct]) K[c] = true;
-  }
-  dpad.className = ['u', 'd', 'l', 'r'].filter(k => K[k]).map(k => 'p' + k).join(' ');
+/* ---- virtual joystick: analog direction + strength in JX/JY (-1..1) ---- */
+const joy = document.getElementById('joy'), knob = document.getElementById('knob');
+let joyId = null, JX = 0, JY = 0;
+function joySet(e) {
+  const r = joy.getBoundingClientRect(), rad = r.width / 2, max = rad * .6;
+  let dx = e.clientX - (r.left + rad), dy = e.clientY - (r.top + rad);
+  const d = Math.hypot(dx, dy);
+  if (d > max) { dx *= max / d; dy *= max / d; }
+  knob.style.transform = `translate(${dx.toFixed(1)}px,${dy.toFixed(1)}px)`;
+  const m = Math.min(1, d / max), dead = .12;
+  const mag = m < dead ? 0 : (m - dead) / (1 - dead);   // small push = slow, full push = full speed
+  JX = d ? dx / Math.hypot(dx, dy) * mag : 0;
+  JY = d ? dy / Math.hypot(dx, dy) * mag : 0;
 }
-let dpadId = null;
-const dpadEnd = e => { if (e && e.pointerId !== dpadId) return; dpadId = null; K.l = K.r = K.u = K.d = false; dpad.className = ''; };
-dpad.addEventListener('pointerdown', e => {
-  e.preventDefault(); dpadId = e.pointerId;
-  try { dpad.setPointerCapture(e.pointerId); } catch (err) {}
-  dpadSet(e);
-});
-addEventListener('pointermove', e => { if (e.pointerId === dpadId) dpadSet(e); });
-addEventListener('pointerup', dpadEnd);
-addEventListener('pointercancel', dpadEnd);
-
-function pressA() {
+function joyEnd(e) {
+  if (e && e.pointerId !== joyId) return;
+  joyId = null; JX = JY = 0; knob.style.transform = ''; joy.classList.remove('on');
+}
+joy.addEventListener('pointerdown', e => {
+  e.preventDefault(); e.stopPropagation();
+  joyId = e.pointerId;
+  try { joy.setPointerCapture(e.pointerId); } catch (err) {}
+  joy.classList.add('on'); joySet(e);
   if (state === 'title' || (state === 'over' && overT > .8)) start();
-  else if (state === 'play') state = 'pause';
   else if (state === 'pause') state = 'play';
-}
-function bindBtn(id, fn) {
+});
+addEventListener('pointermove', e => { if (e.pointerId === joyId) joySet(e); });
+addEventListener('pointerup', joyEnd);
+addEventListener('pointercancel', joyEnd);
+
+/* ---- icon buttons ---- */
+function setMuted(m) { muted = m; document.body.classList.toggle('muted', m); }
+function bindIco(id, fn) {
   const b = document.getElementById(id);
-  b.addEventListener('pointerdown', e => { e.preventDefault(); b.classList.add('down'); fn(); if (navigator.vibrate) navigator.vibrate(8); });
-  const up = () => b.classList.remove('down');
-  b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('pointerleave', up);
+  b.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); fn(); if (navigator.vibrate) try { navigator.vibrate(8); } catch (err) {} });
 }
-bindBtn('bA', pressA);
-bindBtn('bB', () => { muted = !muted; document.querySelector('#bB small').textContent = muted ? 'MUTED' : 'SOUND'; });
-bindBtn('bP', () => { if (state === 'play') state = 'pause'; else if (state === 'pause') state = 'play'; });
+bindIco('bP', () => { if (state === 'play') state = 'pause'; else if (state === 'pause') state = 'play'; });
+bindIco('bS', () => setMuted(!muted));
 addEventListener('pointercancel', () => drag = null);
 
 /* ---------------- effects ---------------- */
@@ -605,6 +594,7 @@ function update(dt) {
     t += dt; level = 1 + Math.floor(t / 15); sinceHit += dt;
     let mx = (K.r ? 1 : 0) - (K.l ? 1 : 0), my = (K.d ? 1 : 0) - (K.u ? 1 : 0);
     if (mx && my) { mx *= .707; my *= .707; }
+    if (JX || JY) { mx = JX; my = JY; }          // joystick (analog) overrides keys
     const ox = P.x, oy = P.y;
     P.x = clamp(P.x + mx * P.sp * dt + dragDX, 130, W - 18);
     P.y = clamp(P.y + my * P.sp * dt + dragDY, 18, H - 28);
@@ -860,11 +850,10 @@ function drawHUD() {
   if (P.shield > 0) txt('SHIELD ' + Math.ceil(P.shield), 192, 5, 1, '#9be22d');
   if (P.armor > 0) txt('JACKET', 228, 5, 1, '#dddddd');
   txt('SCORE ' + score(), W - 4, 5, 1, '#ffe27a', 'r');
-  if (muted) txt('MUTE', W - 4, 17, 1, '#888', 'r');
   // stock ticker
   const ch = (nvda / 200 - 1) * 100, up = ch >= 0;
-  ctx.fillStyle = 'rgba(10,5,20,.78)'; ctx.fillRect(W - 82, H - 12, 80, 10);
-  txt('NVDA $' + nvda.toFixed(2) + ' ' + (up ? '▲' : '▼') + Math.abs(ch).toFixed(1) + '%', W - 5, H - 10, 1, up ? '#5fe08a' : '#ff5a6a', 'r');
+  ctx.fillStyle = 'rgba(10,5,20,.78)'; ctx.fillRect(44, H - 12, 80, 10);   // bottom-left (joystick lives bottom-right)
+  txt('NVDA $' + nvda.toFixed(2) + ' ' + (up ? '▲' : '▼') + Math.abs(ch).toFixed(1) + '%', 47, H - 10, 1, up ? '#5fe08a' : '#ff5a6a');
 }
 
 function scene() {
@@ -980,11 +969,11 @@ function drawTitle() {
   txt('GUEST!', 300, 80, 1, '#ffe592', 'c');
 
   ctx.fillStyle = 'rgba(20,8,35,.75)'; ctx.fillRect(94, 104, 132, 42);
-  txt(isTouch ? 'D-PAD OR DRAG: MOVE' : 'ARROWS/WASD/D-PAD: MOVE', W / 2, 108, 1, '#c9b8ff', 'c');
+  txt(isTouch ? 'JOYSTICK OR DRAG: MOVE' : 'ARROWS/WASD/STICK: MOVE', W / 2, 108, 1, '#c9b8ff', 'c');
   txt('GPU=SHIELD  ICE=COOL DOWN', W / 2, 117, 1, '#9be22d', 'c');
   txt('PHONE=WIFE  JACKET=ARMOR', W / 2, 126, 1, '#5fe08a', 'c');
-  txt(isTouch ? 'A START/PAUSE  B SOUND' : 'P PAUSE   M MUTE', W / 2, 135, 1, '#c9b8ff', 'c');
-  if (Math.floor(clock * 2) % 2) txt(isTouch ? 'TAP OR PRESS A TO START' : 'PRESS ENTER TO START', W / 2, 152, 1, '#ffe27a', 'c');
+  txt(isTouch ? 'TOP ICONS: PAUSE / SOUND' : 'P PAUSE   M MUTE', W / 2, 135, 1, '#c9b8ff', 'c');
+  if (Math.floor(clock * 2) % 2) txt(isTouch ? 'TAP TO START' : 'PRESS ENTER OR TAP TO START', W / 2, 152, 1, '#ffe27a', 'c');
   if (best) txt('BEST ' + best, W / 2, 164, 1, '#ff9ec4', 'c');
 }
 
@@ -1036,10 +1025,10 @@ function draw() {
   if (scn.flash > 0) { ctx.fillStyle = `rgba(255,140,185,${Math.min(.75, scn.flash * 2.2)})`; ctx.fillRect(0, 0, W, H); }
   drawHUD();
   if (state === 'fall' && !scn.kiss && Math.floor(clock * 6) % 2) txt('TRAPPED!', W / 2, 30, 4, '#ff3b6b', 'c', '#3a0d26');
-  if (state === 'fall' && scn.kiss > 0 && scn.kiss < 2.5) txt('▼8%', W - 5, H - 22, 1.5, '#ff5a6a', 'r');
-  if (state === 'play' && t < 2.5) txt('DODGE THE LOVE ARROWS!', W / 2, 40, 2, '#ffe27a', 'c');
-  if (state === 'play' && level > 1 && t % 15 < 1.5) txt('LEVEL ' + level + '!', W / 2, 40, 2, '#ff9ec4', 'c');
-  if (state === 'play' && banner && Math.floor(clock * 8) % 2) txt(banner.s, W / 2, 58, 2, '#ffe592', 'c');
+  if (state === 'fall' && scn.kiss > 0 && scn.kiss < 2.5) txt('▼8%', 47, H - 22, 1.5, '#ff5a6a');
+  if (state === 'play' && t < 2.5) txt('DODGE THE LOVE ARROWS!', W / 2, 64, 2, '#ffe27a', 'c');
+  if (state === 'play' && level > 1 && t % 15 < 1.5) txt('LEVEL ' + level + '!', W / 2, 64, 2, '#ff9ec4', 'c');
+  if (state === 'play' && banner && Math.floor(clock * 8) % 2) txt(banner.s, W / 2, 78, 2, '#ffe592', 'c');
   if (state !== 'over') drawTalk();
   if (state === 'pause') { dim(.6); txt('PAUSED', W / 2, 75, 3, '#ffffff', 'c'); txt('PRESS P OR TAP TO RESUME', W / 2, 100, 1, '#c9b8ff', 'c'); }
   if (state === 'over') drawOver();
@@ -1050,6 +1039,8 @@ function loop(now) {
   // the first rAF timestamp can be earlier than performance.now() at load, so never allow a negative step
   const dt = last === null ? 0 : clamp((now - last) / 1000, 0, .05); last = now;
   try { update(dt); draw(); } catch (e) { console.error(e); }   // a bad frame must never kill the loop
+  const isOver = state === 'over';
+  if (isOver !== loop.over) { loop.over = isOver; document.body.classList.toggle('st-over', isOver); if (isOver) joyEnd(); }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
