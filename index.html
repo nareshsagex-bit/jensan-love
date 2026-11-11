@@ -1,0 +1,1050 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Cupid's Arrows</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;height:100%;background:#120a1f;overflow:hidden;touch-action:none;
+    user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+  body{display:flex;align-items:center;justify-content:center;font-family:"Press Start 2P",monospace}
+  #wrap{display:grid;grid-template-areas:"game";place-items:center;gap:14px}
+  canvas{grid-area:game;display:block;image-rendering:pixelated;
+    box-shadow:0 0 0 4px #2a1840,0 0 0 8px #120a1f,0 0 0 10px #ff3b6b55,0 12px 50px #000}
+  .pad{display:none}
+
+  /* ---- handheld console shell (touch devices) ---- */
+  body.touch #wrap{grid-template-areas:"game game" "left right";grid-template-columns:1fr 1fr;
+    padding:16px 14px 18px;border-radius:26px;
+    background:linear-gradient(160deg,#4a2b70,#2a1744 60%,#1e1032);
+    box-shadow:inset 0 2px 0 #7a52a8,inset 0 -4px 0 #140a22,0 14px 40px #000}
+  body.touch canvas{box-shadow:0 0 0 3px #120a1f,0 0 0 6px #6b4a96}
+  body.touch .pad{display:flex;align-items:center;justify-content:center;gap:16px}
+  #padL{grid-area:left} #padR{grid-area:right}
+  #padL,#padR{zoom:var(--k,1)}
+  body.touch.side #wrap{grid-template-areas:"left game right";grid-template-columns:auto auto auto;padding:12px 18px}
+
+  /* D-pad */
+  #dpad{position:relative;width:138px;height:138px;touch-action:none}
+  #dpad::before,#dpad::after{content:"";position:absolute;background:#22202c;border-radius:8px;
+    box-shadow:inset 0 -4px 0 #111018,inset 0 2px 0 #3c3a4c,0 4px 0 #0c0a14}
+  #dpad::before{left:46px;top:0;width:46px;height:138px}
+  #dpad::after{top:46px;left:0;width:138px;height:46px}
+  #dpad span{position:absolute;z-index:2;width:46px;height:46px;display:flex;align-items:center;justify-content:center;
+    color:#6d6a85;font-size:14px;pointer-events:none;transition:color .05s}
+  #dpad .u{left:46px;top:0} #dpad .d{left:46px;bottom:0} #dpad .l{left:0;top:46px} #dpad .r{right:0;top:46px}
+  #dpad i{position:absolute;z-index:2;left:58px;top:58px;width:22px;height:22px;border-radius:50%;background:#1a1822;pointer-events:none}
+  #dpad.pu .u,#dpad.pd .d,#dpad.pl .l,#dpad.pr .r{color:#ff6b93;text-shadow:0 0 8px #ff3b6b}
+
+  /* A / B buttons */
+  .btns{display:flex;gap:14px;transform:rotate(-18deg)}
+  .round{width:66px;height:66px;border-radius:50%;border:0;font:inherit;font-size:18px;color:#fff;
+    background:radial-gradient(circle at 35% 30%,#ff7aa0,#e0204f 60%,#9c0f33);
+    box-shadow:inset 0 -5px 0 #7a0a26,0 5px 0 #0c0a14;touch-action:none;position:relative}
+  .round.b{background:radial-gradient(circle at 35% 30%,#b99cff,#6c42d6 60%,#3f2290);box-shadow:inset 0 -5px 0 #2b1766,0 5px 0 #0c0a14}
+  .round.down{transform:translateY(4px);box-shadow:inset 0 -2px 0 #7a0a26,0 1px 0 #0c0a14}
+  .round small{position:absolute;left:50%;top:76px;transform:translateX(-50%);font-size:7px;color:#c9b8ff;white-space:nowrap}
+  .side{display:flex;flex-direction:column;align-items:center;gap:26px}
+  .pill{border:0;font:inherit;font-size:7px;color:#c9b8ff;background:#1a1028;padding:8px 12px;border-radius:12px;
+    box-shadow:inset 0 -2px 0 #0c0716;touch-action:none}
+  .pill.down{transform:translateY(2px)}
+  button{cursor:pointer;outline:none} #dpad{cursor:pointer}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="g" width="1280" height="720"></canvas>
+  <div id="padL" class="pad">
+    <div id="dpad"><span class="u">▲</span><span class="d">▼</span><span class="l">◀</span><span class="r">▶</span><i></i></div>
+  </div>
+  <div id="padR" class="pad">
+    <div class="side">
+      <div class="btns">
+        <button id="bB" class="round b">B<small>SOUND</small></button>
+        <button id="bA" class="round">A<small>START</small></button>
+      </div>
+      <button id="bP" class="pill">PAUSE</button>
+    </div>
+  </div>
+</div>
+<script>
+"use strict";
+const W = 320, H = 180, FLOOR = H - 24;
+const cv = document.getElementById('g'), ctx = cv.getContext('2d');
+const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window || location.search.includes('pad');
+document.body.classList.add('touch');   // console controller is always shown (mouse, touch, or keyboard all work)
+let scale = 1, R = 4;   // scale = CSS px per game pixel, R = canvas px per game pixel
+function fit() {
+  // controller size scales with the screen; pick the layout (pads beside vs below) that gives the biggest game
+  const k = clamp(Math.min(innerWidth, innerHeight) / 520, .6, 1);
+  document.documentElement.style.setProperty('--k', k);
+  const sideS = Math.min((innerWidth - 24 - 2 * 160 * k - 30) / W, (innerHeight - 40) / H);
+  const stackS = Math.min((innerWidth - 40) / W, (innerHeight - 40 - 190 * k) / H);
+  const side = sideS >= stackS;
+  document.body.classList.toggle('side', side);
+  scale = Math.max(.5, side ? sideS : stackS);
+  cv.style.width = Math.round(W * scale) + 'px';
+  cv.style.height = Math.round(H * scale) + 'px';
+  const r = clamp(Math.ceil(scale * (devicePixelRatio || 1)), 2, 6);
+  if (r !== R || cv.width !== W * r) { R = r; cv.width = W * R; cv.height = H * R; }
+  ctx.imageSmoothingEnabled = false;
+}
+addEventListener('resize', () => setTimeout(fit, 50));
+
+const rand = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+fit();
+
+/* ---------------- sprite helpers ---------------- */
+function mk(w, h, f) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d');
+  f((a, b, cw, ch, col) => { x.fillStyle = col; x.fillRect(a, b, cw, ch); });
+  return c;
+}
+
+/* Jensen: grey hair, glasses, black leather jacket. mood 0 normal, 1 blush, 2 in love */
+function jensenSprite(f, mood) {
+  return mk(16, 26, p => {
+    const HA='#d9d9d9', HD='#a3a3a3', HL='#f6f6f6', SK='#e6b089', SD='#c58d66',
+          G='#1d1d1d', LE='#bfe0ea', JK='#161616', JH='#3d3d3d', SH='#050505',
+          PA='#262a3a', SO='#0b0b0b';
+    const lo = f === 1 ? -1 : 0, ro = f === 2 ? 1 : 0;
+    // legs + shoes
+    p(4+lo,20,3,4,PA); p(9+ro,20,3,4,PA);
+    p(3+lo,24,4,2,SO); p(9+ro,24,4,2,SO);
+    // jacket torso
+    p(2,11,12,10,JK);
+    p(3,12,1,8,JH); p(12,12,1,8,JH);
+    p(6,11,4,2,SH); p(7,13,2,6,SH);           // black tee V
+    p(5,11,1,4,JH); p(10,11,1,4,JH);          // lapels
+    p(9,14,1,6,'#2a2a2a');                    // zipper line
+    p(2,20,12,1,'#0a0a0a');
+    // arms + hands
+    p(0,12,2,8,JK); p(14,12,2,8,JK); p(0,12,1,7,JH); p(15,12,1,7,JH);
+    p(0,20,2,2,SK); p(14,20,2,2,SK);
+    p(6,10,4,1,SD);                           // neck
+    // head
+    p(4,3,8,7,SK); p(3,5,1,3,SD); p(12,5,1,3,SD); p(5,9,6,1,SK);
+    // hair (swept silver)
+    p(4,0,8,1,HA); p(3,1,10,2,HA); p(3,3,2,2,HA); p(11,3,2,2,HA); p(5,3,6,1,HA);
+    p(5,1,3,1,HL); p(9,0,2,1,HL); p(3,3,1,2,HD); p(12,3,1,2,HD); p(8,2,1,1,HD);
+    // glasses
+    p(3,5,4,1,G); p(9,5,4,1,G); p(7,5,2,1,G);
+    p(3,6,1,2,G); p(6,6,1,2,G); p(9,6,1,2,G); p(12,6,1,2,G);
+    p(4,6,2,2,LE); p(10,6,2,2,LE); p(4,6,1,1,'#ffffff'); p(10,6,1,1,'#ffffff');
+    p(7,7,2,1,SD);                            // nose
+    if (mood === 3) {                         // kissed: happy closed eyes, deep blush
+      p(4,7,1,1,'#222'); p(5,6,1,1,'#222'); p(10,6,1,1,'#222'); p(11,7,1,1,'#222');
+      p(4,8,2,1,'#ff7a90'); p(10,8,2,1,'#ff7a90');
+      p(6,9,4,1,'#9b4a40');
+    } else if (mood === 2) {
+      p(4,6,2,2,'#ff2b5e'); p(10,6,2,2,'#ff2b5e');
+      p(4,8,2,1,'#ff8fa8'); p(10,8,2,1,'#ff8fa8');
+      p(6,8,4,1,'#8a3b33'); p(7,9,2,1,'#c0505a');
+    } else {
+      p(5,7,1,1,'#222'); p(10,7,1,1,'#222');
+      p(6,9,4,1,'#9b4a40'); p(5,8,1,1,'#b5705a'); p(10,8,1,1,'#b5705a');
+      if (mood === 1) { p(4,8,1,1,'#ff8fa8'); p(11,8,1,1,'#ff8fa8'); }
+    }
+  });
+}
+
+/* Girl: long dark hair, red qipao with gold flowers, holding a bow */
+/* mode: 0 aiming, 1 pulling the string, 2 in love (bow dropped, hands clasped), 3 kiss (leaning in) */
+function girlSprite(mode) {
+  const pull = mode === 1;
+  return mk(24, 30, p0 => {
+    const HR='#3b2016', HH='#6a3a24', SK='#f4cdb0', SD='#d9a585', RD='#cf1f2b',
+          RK='#8f121b', GO='#f3b63f', GL='#ffe39a', WD='#8a4b23', ST='#f5f0e6', EY='#2a1610';
+    const hx = mode === 3 ? 1 : 0, hy = mode === 3 ? 2 : 0;
+    let p = p0;                                    // body uses p0; head uses the leaning offset
+    const q = (x, y, w, h, c) => p0(x + hx, y + hy, w, h, c);
+    // long back hair
+    p(2,4,4,15,HR); p(3,19,2,2,HR); p(3,6,1,10,HH);
+    // legs + shoes
+    p(6,26,2,3,SK); p(9,26,2,3,SK); p(5,29,3,1,RK); p(9,29,3,1,RK);
+    // qipao
+    p(4,11,8,12,RD); p(3,20,10,6,RD);
+    p(4,12,1,13,RK); p(11,20,1,6,RK);
+    p(6,10,5,1,RK); p(7,10,3,1,GO);           // mandarin collar
+    p(10,12,1,1,GO);                           // frog button
+    for (const [fx, fy] of [[6,14],[9,18],[6,22],[10,24],[8,15]]) {
+      p(fx-1,fy,1,1,GO); p(fx+1,fy,1,1,GO); p(fx,fy-1,1,1,GO); p(fx,fy+1,1,1,GO); p(fx,fy,1,1,GL);
+    }
+    // back arm
+    p(3,12,1,7,SK); p(3,19,1,1,SD);
+    // head (q = leaning offset in kiss pose)
+    q(8,10,2,1,SD);
+    q(5,3,7,7,SK); q(5,9,1,1,SD);
+    q(5,0,7,1,HR); q(4,1,9,2,HR); q(4,3,8,1,HR); q(4,4,3,1,HR); q(4,3,2,8,HR); q(12,3,1,6,HR);
+    q(6,1,3,1,HH); q(10,2,2,1,HH);
+    q(4,2,2,2,'#ff5a7a'); q(5,2,1,1,'#ffd0dc');  // hair flower
+    // face
+    q(7,5,2,1,HR); q(10,5,2,1,HR);
+    if (mode >= 2) {                           // happy closed eyes + big blush
+      q(7,7,1,1,EY); q(8,6,1,1,EY); q(10,6,1,1,EY); q(11,7,1,1,EY);
+      q(7,8,1,1,'#ff7a90'); q(10,8,2,1,'#ff7a90');
+      if (mode === 3) { q(10,9,2,1,'#d23a4a'); q(12,9,1,1,'#ff5a6a'); }   // pucker
+      else { q(8,9,3,1,'#d23a4a'); }
+    } else {
+      q(8,6,1,2,EY); q(10,6,1,2,EY);
+      q(7,8,1,1,'#f59aa2'); q(11,8,1,1,'#f59aa2');
+      q(9,9,2,1,'#d23a4a');
+    }
+    q(6,8,1,2,GO);                             // earring
+    if (mode === 2) { p(8,13,4,2,SK); p(9,12,2,1,SK); return; }        // hands clasped at chest
+    if (mode === 3) { p(11,12,5,2,SK); p(15,11,1,1,SK); return; }      // arm around him
+    // bow
+    p(16,6,1,1,WD); p(17,7,1,12,WD); p(16,19,1,1,WD); p(17,12,1,2,'#c78a4f');
+    if (pull) {
+      p(16,7,1,1,ST); p(15,8,1,2,ST); p(14,10,1,2,ST); p(13,12,1,2,ST);
+      p(14,14,1,2,ST); p(15,16,1,2,ST); p(16,18,1,1,ST);
+      p(13,12,8,1,WD);                         // nocked arrow
+      p(20,11,1,1,'#ff3b6b'); p(22,11,1,1,'#ff3b6b'); p(20,12,3,1,'#ff3b6b'); p(21,13,1,1,'#ff3b6b');
+      p(12,11,1,1,'#ff9ec4'); p(12,13,1,1,'#ff9ec4');
+      p(11,12,3,2,SK);                         // pulling hand
+      p(15,12,2,2,SK);
+    } else {
+      p(16,7,1,12,ST);
+      p(11,12,6,2,SK);                         // arm extended to grip
+    }
+  });
+}
+
+const JCACHE = {};
+const jensen = (f, m) => JCACHE[f + '_' + m] || (JCACHE[f + '_' + m] = jensenSprite(f, m));
+const GIRL = [girlSprite(0), girlSprite(1), girlSprite(2), girlSprite(3)];
+
+const GPU = mk(12, 10, p => {
+  p(0,2,12,1,'#9aa'); p(0,5,12,1,'#9aa'); p(0,8,12,1,'#9aa');
+  p(1,0,10,10,'#0f2a12'); p(2,1,8,8,'#76b900'); p(3,2,6,6,'#3f6a00');
+  p(4,3,4,4,'#9be22d'); p(5,4,2,2,'#e9ffc4');
+});
+const ICE = mk(10, 10, p => {
+  p(1,1,8,8,'#7fd3f7'); p(0,2,10,6,'#7fd3f7'); p(2,0,6,10,'#7fd3f7');
+  p(2,2,6,6,'#bff0ff'); p(2,2,3,1,'#fff'); p(2,3,1,2,'#fff'); p(6,6,2,2,'#5ab8e6');
+});
+
+/* Trump: golden swoop, navy suit, extra-long red tie, pointing hand */
+function trumpSprite(talk) {
+  return mk(16, 27, p => {
+    const HA='#f2c14e', HD='#c9962a', HL='#ffe592', SK='#f0a35e', SD='#d4844a', PALE='#f8d2ac',
+          NV='#1f2a4d', NL='#33406e', ND='#141b33', RD='#d0202e', RK='#9c1420', WH='#f4f4f4';
+    p(4,21,3,4,ND); p(9,21,3,4,ND); p(3,25,4,2,'#0d0d0d'); p(9,25,4,2,'#0d0d0d');
+    p(2,11,12,10,NV); p(3,12,1,8,NL);
+    p(6,11,4,3,WH); p(7,14,2,1,WH);
+    p(5,11,1,4,NL); p(10,11,1,4,NL);
+    p(7,11,2,1,RK); p(7,12,2,11,RD); p(8,12,1,11,RK);   // the long tie
+    p(11,13,1,1,'#ff4040');                              // flag pin
+    p(0,12,2,8,NV); p(0,20,2,2,SK);
+    p(14,7,2,7,NV); p(14,5,2,2,SK); p(15,3,1,2,SK);      // pointing hand
+    p(6,10,4,1,SD);
+    p(4,3,8,7,SK); p(3,5,1,3,SD); p(12,5,1,3,SD);
+    p(5,5,2,2,PALE); p(9,5,2,2,PALE);
+    p(6,6,1,1,'#2a2a2a'); p(9,6,1,1,'#2a2a2a');
+    p(5,4,2,1,HD); p(9,4,2,1,HD);
+    p(7,7,2,1,SD);
+    if (talk) p(7,8,2,2,'#7a2a20'); else { p(6,8,4,1,'#a8483a'); p(7,8,2,1,'#c0604a'); }
+    p(4,0,9,1,HA); p(2,1,12,2,HA); p(2,3,3,2,HA); p(11,3,3,1,HA); p(13,2,2,2,HA);
+    p(5,1,6,1,HL); p(2,3,1,2,HD); p(4,0,2,1,HD);
+  });
+}
+const TRUMP = [trumpSprite(false), trumpSprite(true)];
+const PHONE = mk(8, 12, p => {
+  p(0,0,8,12,'#222'); p(1,1,6,8,'#5fe08a'); p(3,10,2,1,'#888');
+  p(2,3,4,1,'#fff'); p(3,5,2,2,'#fff');
+});
+const JACKET = mk(12, 10, p => {
+  p(2,0,8,10,'#161616'); p(0,1,2,7,'#161616'); p(10,1,2,7,'#161616');
+  p(5,0,2,5,'#050505'); p(4,0,1,4,'#555'); p(7,0,1,4,'#555'); p(3,2,1,6,'#3d3d3d'); p(9,2,1,6,'#3d3d3d');
+});
+const PICK_SPR = { gpu: GPU, ice: ICE, phone: PHONE, jacket: JACKET };
+
+/* ---------------- lines ---------------- */
+const LINES = {
+  hit: ["MY ONLY AFFAIR IS WITH GPUS!", "MY HEART IS NOT OPEN SOURCE!", "THE MORE YOU LOVE, THE MORE YOU PAY",
+        "NOT IN FRONT OF THE BOARD!", "I'M MARRIED TO MY JACKET!", "MY WIFE IS ON X!", "DELETE THIS PHOTO!"],
+  dodge: ["NOT TODAY, CUPID!", "ACCELERATED DODGE!", "THE MORE YOU DODGE, THE MORE YOU SAVE!",
+          "CUDA CORES ENGAGED!", "LOW LATENCY, BABY!", "TOO FAST FOR LOVE!"],
+  // her: sweet-talk + love-trap lines (while shooting)
+  girl: ["NOTICE ME, JENSEN! ♥", "ONE MORE CHIP, DARLING", "MY HEART RUNS ON CUDA", "SIGN MY HEART TOO!",
+         "JUST ONE H100 OF LOVE", "NICE JACKET ♥",
+         "YOU HAD ME AT BLACKWELL ♥", "ARE YOU A GPU? MY HEART RUNS HOT", "MY LOVE HAS MORE CORES THAN AN H100",
+         "LET'S TRAIN A MODEL TOGETHER ♥", "YOU + ME = PERFECT PARALLEL PROCESSING", "I'D WAIT IN ANY GPU QUEUE FOR YOU",
+         "JUST ONE DINNER... I'LL BRING THE CHIPS ♥", "COME TO MY NIGHT MARKET, JENSEN ♥",
+         "THAT JACKET WOULD LOOK BETTER ON MY CHAIR", "YOUR BOARD DOESN'T HAVE TO KNOW ♥",
+         "ONE ARROW, AND YOUR HEART IS MINE", "NOBODY ESCAPES CUPID'S CUDA"],
+  // her: teasing when he dodges
+  tease: ["YOU CAN'T DODGE FOREVER, DARLING", "RUN ALL YOU WANT, I HAVE INFINITE COMPUTE",
+          "PLAYING HARD TO GET? CUTE ♥", "EVEN YOUR GPUS OVERHEAT FOR ME"],
+  // her: gloating on a hit
+  gotcha: ["GOTCHA! ♥ ONE STEP CLOSER", "THE MORE YOU DODGE, THE MORE YOU FALL ♥", "DIRECT HIT! LOVE LATENCY: ZERO"],
+  // her: special attack callouts
+  special: { homing: "THIS ONE HAS AUTOPILOT ♥", wall: "NO EXIT FROM MY LOVE WALL!", burst: "SUPERCLUSTER OF LOVE!" },
+  trumpIn: "HONOURABLE GUY! TREMENDOUS GUY!",
+  trump: ["TARIFFS ON LOVE! 100%!", "NOBODY DODGES BETTER. BELIEVE ME.", "I KNOW JENSEN. GREAT GUY.",
+          "WE'RE BUILDING A WALL. A LOVE WALL."],
+  fired: ["YOU'RE FIRED!", "FAKE ARROW!", "SAD!", "WRONG!"],
+};
+const ENDINGS = ["BOARD LAUNCHES INVESTIGATION", "NVDA DOWN 8% AFTER HOURS", "LEATHER JACKET LEFT ON THE FLOOR",
+  "TRUMP: STILL AN HONOURABLE GUY!", "CONGRESS WANTS A WORD NOV 18", "THE MORE YOU LOVE, THE MORE YOU PAY",
+  "SHE GOT HIM! LOVE TRAP: SUCCESSFUL ♥", "JENSEN.EXE HAS STOPPED RESPONDING"];
+const pick = a => a[(Math.random() * a.length) | 0];
+
+/* ---------------- background ---------------- */
+const BAYER = [0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5];
+const BG = mk(W, H, p => {
+  const bands = ['#2c68c2','#3675cd','#4282d7','#4f90e0','#5c9de8','#69aaef','#79b8f4'];
+  for (let y = 0; y < FLOOR; y++) {
+    const fb = y / FLOOR * (bands.length - 1), i = Math.floor(fb), fr = fb - i;
+    for (let x = 0; x < W; x++) {
+      const th = BAYER[(y & 3) * 4 + (x & 3)] / 16;
+      p(x, y, 1, 1, fr > th ? bands[Math.min(i + 1, bands.length - 1)] : bands[i]);
+    }
+  }
+  const cloud = (cx, cy, s) => {
+    p(cx, cy+2*s, 14*s, 3*s, '#a9d4f8'); p(cx+2*s, cy, 6*s, 3*s, '#a9d4f8'); p(cx+7*s, cy+s, 5*s, 2*s, '#a9d4f8');
+    p(cx+3*s, cy+s, 3*s, s, '#d4ebfc'); p(cx+s, cy+3*s, 10*s, s, '#d4ebfc');
+  };
+  cloud(30, 30, 2); cloud(150, 22, 1); cloud(230, 45, 2); cloud(110, 70, 1); cloud(280, 95, 1);
+  for (let i = 0; i < 30; i++) p((Math.sin(i * 91.7) * 0.5 + 0.5) * W | 0, (Math.cos(i * 37.3) * 0.5 + 0.5) * (FLOOR - 20) + 14 | 0, 1, 1, '#e6f3ff');
+  // stage floor
+  p(0, FLOOR, W, 24, '#6b3f2a'); p(0, FLOOR, W, 1, '#b07a52'); p(0, FLOOR + 1, W, 1, '#8a5638');
+  for (let r = 0; r < 4; r++) {
+    const y = FLOOR + 6 + r * 5; p(0, y, W, 1, '#55301f');
+    for (let x = (r % 2) * 18; x < W; x += 36) p(x, y - 4, 1, 4, '#55301f');
+  }
+  // red carpet under the girl
+  p(0, FLOOR + 2, 40, 22, '#a3172a'); p(0, FLOOR + 2, 40, 1, '#d63a4e'); p(39, FLOOR + 2, 1, 22, '#7a0f1e');
+});
+
+/* ---------------- bitmap font (3x5) ---------------- */
+const FONT = {
+  '0':'111101101101111','1':'010110010010111','2':'111001111100111','3':'111001111001111','4':'101101111001001',
+  '5':'111100111001111','6':'111100111101111','7':'111001001001001','8':'111101111101111','9':'111101111001111',
+  'A':'010101111101101','B':'110101110101110','C':'011100100100011','D':'110101101101110','E':'111100110100111',
+  'F':'111100110100100','G':'011100101101011','H':'101101111101101','I':'111010010010111','J':'001001001101010',
+  'K':'101101110101101','L':'100100100100111','M':'101111111101101','N':'110101101101101','O':'010101101101010',
+  'P':'110101110100100','Q':'010101101110011','R':'110101110101101','S':'011100010001110','T':'111010010010010',
+  'U':'101101101101111','V':'101101101101010','W':'101101111111101','X':'101101010101101','Y':'101101010010010',
+  'Z':'111001010100111','%':'101001010100101','!':'010010010000010','+':'000010111010000','-':'000000111000000',
+  ':':'000010000010000','.':'000000000000010','/':'001001010100100',"'":'010010000000000','?':'111001011000010',
+  '♥':'000101111111010','▲':'000010111000000','▼':'000111010000000','#':'101111101111101','=':'000111000111000','$':'011110010011110',',':'000000000010100','(':'010100100100010',')':'010001001001010'
+};
+/* Text uses the 8x8 "Press Start 2P" pixel font rendered at full canvas resolution (crisp + readable).
+   The 3x5 bitmap above is only used for the special glyphs ♥ ▲ ▼. size = glyph size in game pixels. */
+const SPECIAL = '♥▲▼';
+try { document.fonts.load('16px "Press Start 2P"'); } catch (e) {}
+function drawStr(s, x, y, size, col) {
+  ctx.fillStyle = col; ctx.font = size + 'px "Press Start 2P", monospace'; ctx.textBaseline = 'top';
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i], cx = x + i * size;
+    if (SPECIAL.includes(c)) {
+      const g = FONT[c], u = size / 5;
+      for (let k = 0; k < 15; k++) if (g[k] === '1') ctx.fillRect(cx + u * .6 + (k % 3) * u, y + ((k / 3) | 0) * u * .9, u, u * .9);
+    } else if (c !== ' ') ctx.fillText(c, cx, y);
+  }
+}
+function txt(s, x, y, sc = 1, col = '#fff', al = 'l', sh = '#1a0b24') {
+  s = String(s).toUpperCase();
+  const size = 4 * sc, w = s.length * size - size / 8;
+  if (al === 'c') x -= w / 2; else if (al === 'r') x -= w;
+  x = Math.round(x * 4) / 4; y = Math.round(y * 4) / 4;
+  if (sh) drawStr(s, x + Math.max(.5, size / 8), y + Math.max(.5, size / 8), size, sh);
+  drawStr(s, x, y, size, col);
+}
+function heart(x, y, c, hi = true) {
+  x = Math.round(x) - 2; y = Math.round(y) - 2;
+  ctx.fillStyle = c;
+  ctx.fillRect(x + 1, y, 1, 1); ctx.fillRect(x + 3, y, 1, 1); ctx.fillRect(x, y + 1, 5, 1);
+  ctx.fillRect(x + 1, y + 2, 3, 1); ctx.fillRect(x + 2, y + 3, 1, 1);
+  if (hi) { ctx.fillStyle = '#fff'; ctx.fillRect(x + 1, y + 1, 1, 1); }
+}
+function bigHeart(x, y, s, c) {
+  const rows = ['.XX.XX.', 'XXXXXXX', 'XXXXXXX', '.XXXXX.', '..XXX..', '...X...'];
+  ctx.fillStyle = c;
+  rows.forEach((r, j) => { for (let i = 0; i < 7; i++) if (r[i] === 'X') ctx.fillRect(Math.round(x) + i * s, Math.round(y) + j * s, s, s); });
+}
+const pix = (x, y, c) => { ctx.fillStyle = c; ctx.fillRect(Math.round(x), Math.round(y), 1, 1); };
+
+/* ---------------- audio ---------------- */
+let AC = null, MASTER = null, muted = false;
+const VOLUME = 3.2;   // master loudness (1 = original)
+function tone(f, d, type = 'square', v = .05, slide = 0, delay = 0) {
+  if (muted) return;
+  try {
+    if (!AC) {
+      AC = new (window.AudioContext || window.webkitAudioContext)();
+      // master volume boost, followed by a limiter so loud overlapping sounds don't crackle
+      const lim = AC.createDynamicsCompressor();
+      lim.threshold.value = -6; lim.knee.value = 6; lim.ratio.value = 12; lim.attack.value = .002; lim.release.value = .15;
+      MASTER = AC.createGain(); MASTER.gain.value = VOLUME;
+      MASTER.connect(lim).connect(AC.destination);
+    }
+    if (AC.state === 'suspended') AC.resume();
+    const t0 = AC.currentTime + delay, o = AC.createOscillator(), g = AC.createGain();
+    o.type = type; o.frequency.setValueAtTime(f, t0);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(40, f + slide), t0 + d);
+    g.gain.setValueAtTime(v, t0); g.gain.exponentialRampToValueAtTime(.0001, t0 + d);
+    o.connect(g).connect(MASTER); o.start(t0); o.stop(t0 + d + .02);
+  } catch (e) {}
+}
+const SFX = {
+  shoot: () => tone(700, .09, 'square', .025, -350),
+  hit: () => { tone(880, .14, 'square', .05, -500); tone(1320, .16, 'triangle', .05, 0, .06); },
+  pick: () => [523, 659, 784, 1046].forEach((f, i) => tone(f, .09, 'square', .035, 0, i * .06)),
+  near: () => tone(1250, .06, 'triangle', .035),
+  deflect: () => tone(260, .08, 'sawtooth', .03, 500),
+  over: () => [784, 659, 523, 659, 784, 1046, 1318].forEach((f, i) => tone(f, .2, 'triangle', .06, 0, i * .16)),
+  start: () => [392, 523, 659, 784].forEach((f, i) => tone(f, .1, 'square', .035, 0, i * .07)),
+  trump: () => [523, 523, 659, 784, 1046].forEach((f, i) => tone(f, .14, 'square', .05, 0, i * .11)),
+  ring: () => { for (let i = 0; i < 6; i++) tone(i % 2 ? 1400 : 1100, .07, 'square', .035, 0, i * .08); },
+  fired: () => tone(200, .15, 'sawtooth', .045, -90),
+  trap: () => [880, 740, 622, 523, 440].forEach((f, i) => tone(f, .12, 'square', .05, 0, i * .09)),
+  smooch: () => {
+    tone(2400, .06, 'sine', .08, -1800); tone(900, .09, 'triangle', .05, 700, .05);
+    [1046, 1318, 1568, 2093].forEach((f, i) => tone(f, .3, 'triangle', .05, 0, .3 + i * .12));
+  },
+};
+
+/* ---------------- state ---------------- */
+let state = 'title', clock = 0, t = 0, level = 1, love = 0, bonus = 0, spawnT = 0, pickT = 0,
+    sinceHit = 99, shake = 0, fallT = 0, overT = 0, heartT = 0;
+let P, G, arrows, pickups, parts, floaters;
+let TR = null, trumpCD = 0, talk = null, nvda = 200, ending = '', banner = null;
+let scn = { kiss: 0 };            // love-trap ending scene state
+let cam = { z: 1, ox: W / 2, oy: H / 2 + 6, lx: W / 2, ly: H / 2 + 6 };
+const EMOJI = ['💕', '💖', '💋', '😍', '💘', '💞'];
+/* One speech bubble at a time. It stays until a new line replaces it.
+   A line is shown for at least ~1.2-1.8s unless a more important one (higher prio) arrives. */
+function say(who, s, prio = 1) {
+  if (talk && prio <= talk.prio && talk.age < (talk.prio >= 2 ? 1.8 : 1.2)) return;
+  talk = { who, s, prio, age: 0 };
+}
+let best = 0;
+try { best = +localStorage.getItem('cupid-best') || 0; } catch (e) {}
+const decor = Array.from({ length: 10 }, () => ({ x: rand(0, W), y: rand(0, FLOOR), s: rand(4, 10) }));
+
+function reset() {
+  P = { x: 250, y: 80, sp: 100, inv: 0, shield: 0, anim: 0, flash: 0, moving: false, armor: 0 };
+  G = { x: 6, y: 76, pull: 0, pending: null, stun: 0 };
+  TR = null; trumpCD = 0; talk = null; nvda = 200; banner = null; scn = { kiss: 0 };
+  arrows = []; pickups = []; parts = []; floaters = [];
+  love = 0; t = 0; level = 1; bonus = 0; spawnT = 1.2; pickT = 9; sinceHit = 99; shake = 0;
+}
+reset();
+const score = () => Math.floor(t * 10) + bonus;
+
+function start() { reset(); state = 'play'; SFX.start(); }
+
+/* ---------------- input ---------------- */
+const K = {};
+const MAP = { ArrowLeft:'l', a:'l', A:'l', ArrowRight:'r', d:'r', D:'r', ArrowUp:'u', w:'u', W:'u', ArrowDown:'d', s:'d', S:'d' };
+addEventListener('keydown', e => {
+  if (MAP[e.key]) { K[MAP[e.key]] = true; e.preventDefault(); }
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    if (state === 'title' || (state === 'over' && overT > .8)) start();
+    else if (state === 'pause') state = 'play';
+  }
+  if ((e.key === 's' || e.key === 'S') && state === 'over' && overT > .8) savePic();
+  if ((e.key === 'p' || e.key === 'P' || e.key === 'Escape') && (state === 'play' || state === 'pause')) state = state === 'play' ? 'pause' : 'play';
+  if (e.key === 'm' || e.key === 'M') muted = !muted;
+});
+addEventListener('keyup', e => { if (MAP[e.key]) K[MAP[e.key]] = false; });
+addEventListener('blur', () => { for (const k in K) K[k] = false; if (state === 'play') state = 'pause'; });
+
+const SAVE_BTN = { x: 232, y: 151, w: 76, h: 13 };
+function savePic() {
+  try {
+    const c = document.createElement('canvas'); c.width = W * 4; c.height = H * 4;
+    const x = c.getContext('2d'); x.imageSmoothingEnabled = true; x.drawImage(cv, 0, 0, c.width, c.height);
+    const a = document.createElement('a'); a.download = 'save-jensen-' + score() + '.png';
+    a.href = c.toDataURL('image/png'); a.click();
+  } catch (e) {}
+}
+let drag = null, dragDX = 0, dragDY = 0;
+cv.addEventListener('pointerdown', e => {
+  if (state === 'over' && overT > .8) {
+    const r = cv.getBoundingClientRect(), cx = (e.clientX - r.left) / r.width * W, cy = (e.clientY - r.top) / r.height * H;
+    const b = SAVE_BTN;
+    if (cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h) { savePic(); return; }
+  }
+  if (state === 'title' || (state === 'over' && overT > .8)) { start(); return; }
+  if (state === 'pause') { state = 'play'; return; }
+  drag = { x: e.clientX, y: e.clientY };
+});
+addEventListener('pointermove', e => {
+  if (!drag) return;
+  dragDX += (e.clientX - drag.x) / scale * 1.25; dragDY += (e.clientY - drag.y) / scale * 1.25;
+  drag.x = e.clientX; drag.y = e.clientY;
+});
+addEventListener('pointerup', () => drag = null);
+addEventListener('contextmenu', e => e.preventDefault());
+
+/* ---- on-screen console controls ---- */
+const dpad = document.getElementById('dpad');
+function dpadSet(e) {
+  const r = dpad.getBoundingClientRect();
+  const dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+  K.l = K.r = K.u = K.d = false;
+  if (Math.hypot(dx, dy) > r.width * .1) {
+    const oct = Math.round(Math.atan2(dy, dx) / (Math.PI / 4));   // 8-way
+    const dirs = { 0: 'r', 1: 'rd', 2: 'd', 3: 'ld', 4: 'l', '-4': 'l', '-3': 'lu', '-2': 'u', '-1': 'ru' };
+    for (const c of dirs[oct]) K[c] = true;
+  }
+  dpad.className = ['u', 'd', 'l', 'r'].filter(k => K[k]).map(k => 'p' + k).join(' ');
+}
+let dpadId = null;
+const dpadEnd = e => { if (e && e.pointerId !== dpadId) return; dpadId = null; K.l = K.r = K.u = K.d = false; dpad.className = ''; };
+dpad.addEventListener('pointerdown', e => {
+  e.preventDefault(); dpadId = e.pointerId;
+  try { dpad.setPointerCapture(e.pointerId); } catch (err) {}
+  dpadSet(e);
+});
+addEventListener('pointermove', e => { if (e.pointerId === dpadId) dpadSet(e); });
+addEventListener('pointerup', dpadEnd);
+addEventListener('pointercancel', dpadEnd);
+
+function pressA() {
+  if (state === 'title' || (state === 'over' && overT > .8)) start();
+  else if (state === 'play') state = 'pause';
+  else if (state === 'pause') state = 'play';
+}
+function bindBtn(id, fn) {
+  const b = document.getElementById(id);
+  b.addEventListener('pointerdown', e => { e.preventDefault(); b.classList.add('down'); fn(); if (navigator.vibrate) navigator.vibrate(8); });
+  const up = () => b.classList.remove('down');
+  b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('pointerleave', up);
+}
+bindBtn('bA', pressA);
+bindBtn('bB', () => { muted = !muted; document.querySelector('#bB small').textContent = muted ? 'MUTED' : 'SOUND'; });
+bindBtn('bP', () => { if (state === 'play') state = 'pause'; else if (state === 'pause') state = 'play'; });
+addEventListener('pointercancel', () => drag = null);
+
+/* ---------------- effects ---------------- */
+function burst(x, y, n, cols, spd = 60) {
+  for (let i = 0; i < n; i++) {
+    const a = rand(0, Math.PI * 2), s = rand(spd * .3, spd);
+    parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 20, life: rand(.4, .9), max: .9,
+      kind: Math.random() < .5 ? 'heart' : 'spark', c: cols[(Math.random() * cols.length) | 0] });
+  }
+}
+function floater(s, x, y, c) { floaters.push({ s, x, y, c, life: 1 }); }
+
+/* ---------------- shooting patterns ---------------- */
+function pickPattern() {
+  const pool = ['aim', 'aim'];
+  if (level >= 2) pool.push('spread', 'fast');
+  if (level >= 3) pool.push('wave', 'wave');
+  if (level >= 4) pool.push('wall');
+  if (level >= 5) pool.push('homing', 'spread');
+  if (level >= 6) pool.push('burst', 'homing');
+  return pool[(Math.random() * pool.length) | 0];
+}
+function fire(kind) {
+  const bx = G.x + 21, by = G.y + 12, cx = P.x + 8, cy = P.y + 13;
+  const base = Math.atan2(cy - by, cx - bx), sp = 95 + Math.min(t, 150) * 1.0;
+  const shoot = (ang, s, type, extra) => arrows.push(Object.assign({
+    x: bx, y: by, vx: Math.cos(ang) * s, vy: Math.sin(ang) * s, vy0: Math.sin(ang) * s, type, age: 0 }, extra));
+  switch (kind) {
+    case 'aim': shoot(base, sp, 'n'); break;
+    case 'spread': for (const o of [-.26, 0, .26]) shoot(base + o, sp * .95, 'n'); break;
+    case 'fast': shoot(base, sp * 1.8, 'fast'); break;
+    case 'wave': shoot(base, sp * .9, 'wave', { ph: rand(0, 6) }); break;
+    case 'homing': shoot(base, sp * .75, 'homing'); break;
+    case 'burst': for (const o of [-.45, -.22, 0, .22, .45]) shoot(base + o, sp * .85, 'n'); break;
+    case 'wall': {
+      const slots = 8, gap = (Math.random() * (slots - 2)) | 0;
+      for (let i = 0; i < slots; i++) {
+        if (i === gap || i === gap + 1) continue;
+        arrows.push({ x: bx - 8, y: 24 + i * 17, vx: sp * .8, vy: 0, vy0: 0, type: 'n', age: 0 });
+      }
+      break;
+    }
+  }
+  burst(bx, by, 4, ['#ff9ec4', '#fff'], 30);
+  SFX.shoot();
+  if (LINES.special[kind]) say('g', LINES.special[kind], 2);
+  else if (Math.random() < .3) say('g', pick(LINES.girl), 1);
+}
+
+/* ---------------- update ---------------- */
+function startFall() {
+  state = 'fall'; fallT = 0;
+  for (const a of arrows) burst(a.x, a.y, 5, ['#ff3b6b', '#ff9ec4']);
+  arrows = []; pickups = []; talk = null; P.shield = 0; P.inv = 0;
+  if (TR) TR.phase = 'watch';
+  scn = { kiss: 0, said: false, l1: false, l2: false, flash: 0, emoT: 0 };
+  ending = pick(ENDINGS);
+  say('j', "I... I THINK I'M IN LOVE!", 9);
+  shake = 4;
+  SFX.trap();
+}
+function startKiss() {
+  scn.kiss = .0001; scn.flash = .35;
+  nvda *= .92;
+  const kx = G.x + 13, ky = G.y + 10;
+  for (let i = 0; i < 26; i++) {               // ring burst that flies outward fast
+    const a = i / 26 * Math.PI * 2, s = rand(70, 110);
+    parts.push({ x: kx + Math.cos(a) * 8, y: ky + Math.sin(a) * 8, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: .7, max: .7, kind: Math.random() < .6 ? 'heart' : 'spark', c: pick(['#ff3b6b', '#ff9ec4', '#fff']), nog: true });
+  }
+  for (let i = 0; i < 6; i++) parts.push({ x: kx + rand(-14, 14), y: G.y - 6, vx: rand(-20, 20), vy: rand(-35, -18), life: 2.4, max: 2.4, kind: 'emoji', ch: pick(EMOJI), nog: true });
+  SFX.smooch();
+}
+
+function update(dt) {
+  clock += dt;
+  for (const d of decor) { d.y -= d.s * dt; d.x += Math.sin(clock + d.s) * 4 * dt; if (d.y < 10) { d.y = FLOOR; d.x = rand(0, W); } }
+
+  if (state === 'play') {
+    t += dt; level = 1 + Math.floor(t / 15); sinceHit += dt;
+    let mx = (K.r ? 1 : 0) - (K.l ? 1 : 0), my = (K.d ? 1 : 0) - (K.u ? 1 : 0);
+    if (mx && my) { mx *= .707; my *= .707; }
+    const ox = P.x, oy = P.y;
+    P.x = clamp(P.x + mx * P.sp * dt + dragDX, 130, W - 18);
+    P.y = clamp(P.y + my * P.sp * dt + dragDY, 18, H - 28);
+    dragDX = dragDY = 0;
+    P.moving = Math.hypot(P.x - ox, P.y - oy) > .05;
+    if (P.moving) P.anim += dt * 9;
+    P.inv = Math.max(0, P.inv - dt); P.flash = Math.max(0, P.flash - dt); P.shield = Math.max(0, P.shield - dt);
+
+    G.y += (clamp(P.y - 3, 16, H - 32) - G.y) * Math.min(1, dt * (1.2 + level * .15));
+
+    if (G.stun > 0) G.stun -= dt;
+    else if (G.pull > 0) { G.pull -= dt; if (G.pull <= 0) fire(G.pending); }
+    else if ((spawnT -= dt) <= 0) {
+      G.pending = pickPattern();
+      G.pull = Math.max(.18, .42 - t * .004);
+      spawnT = Math.max(.3, 1.25 - t * .017) + rand(0, .25);
+    }
+
+    const hx = P.x + 3, hy = P.y + 2, hw = 10, hh = 23;
+    for (const a of arrows) {
+      a.age += dt;
+      if (a.type === 'wave') a.vy = a.vy0 + Math.sin(a.age * 7 + a.ph) * 75;
+      if (a.type === 'homing' && a.age < 1.7) {
+        const sp = Math.hypot(a.vx, a.vy), cur = Math.atan2(a.vy, a.vx);
+        let d = Math.atan2(P.y + 13 - a.y, P.x + 8 - a.x) - cur;
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        const na = cur + clamp(d, -2.4 * dt, 2.4 * dt);
+        a.vx = Math.cos(na) * sp; a.vy = Math.sin(na) * sp;
+        if (Math.random() < .5) parts.push({ x: a.x - a.vx * .03, y: a.y - a.vy * .03, vx: 0, vy: 0, life: .3, max: .3, kind: 'spark', c: '#ffb3ea' });
+      }
+      a.x += a.vx * dt; a.y += a.vy * dt;
+      if (a.type === 'defl' || a.dead) continue;
+      if (TR && TR.phase !== 'out' && a.x > TR.x + 1 && a.x < TR.x + 15 && a.y > TR.y && a.y < TR.y + 26) {
+        a.type = 'defl'; a.vx = -Math.abs(a.vx) * .7; a.vy = rand(-90, 90);
+        burst(a.x, a.y, 6, ['#ffe592', '#fff'], 50); bonus += 15; floater('+15', a.x, a.y - 6, '#ffe592');
+        say('t', pick(LINES.fired), 1);
+        SFX.fired();
+        continue;
+      }
+
+      const dx = Math.max(hx - a.x, 0, a.x - (hx + hw)), dy = Math.max(hy - a.y, 0, a.y - (hy + hh));
+      const dist = Math.hypot(dx, dy);
+      if (dist < 1.5) {
+        if (P.shield > 0) {
+          a.type = 'defl'; a.vx = -Math.abs(a.vx) * .7; a.vy = rand(-80, 80);
+          burst(a.x, a.y, 6, ['#9be22d', '#e9ffc4'], 50); SFX.deflect();
+          bonus += 10; floater('+10', a.x, a.y - 6, '#c8ff7a');
+        } else if (P.inv <= 0 && P.armor > 0) {
+          a.dead = true; P.armor = 0; P.inv = .9; shake = 2;
+          burst(P.x + 8, P.y + 12, 10, ['#555', '#ccc', '#fff']);
+          floater('JACKET TOOK IT!', P.x + 8, P.y - 6, '#dddddd'); say('j', 'PHEW! RIP JACKET.', 3); SFX.deflect();
+        } else if (P.inv <= 0) {
+          a.dead = true;
+          const amt = a.type === 'homing' ? 25 : a.type === 'fast' ? 22 : 18;
+          love = Math.min(100, love + amt); sinceHit = 0; P.inv = .9; P.flash = .4; shake = 5;
+          nvda *= 1 - rand(.015, .035);
+          burst(P.x + 8, P.y + 8, 14, ['#ff3b6b', '#ff9ec4', '#fff']);
+          floater('+' + amt + '% ♥', P.x + 8, P.y - 6, '#ff7aa2'); SFX.hit();
+          if (Math.random() < .35) say('g', pick(LINES.gotcha), 2); else say('j', pick(LINES.hit), 2);
+        }
+      } else if (dist < 8 && !a.near) a.near = true;
+      if (a.near && !a.scored && !a.dead && a.x > hx + hw + 3) {
+        a.scored = true; bonus += 25; nvda *= 1.004;
+        floater('CLOSE! +25', P.x + 8, P.y - 6, '#ffe27a'); SFX.near();
+        if (Math.random() < .55) {
+          if (Math.random() < .5) say('j', pick(LINES.dodge), 1); else say('g', pick(LINES.tease), 1);
+        }
+      }
+    }
+    arrows = arrows.filter(a => !a.dead && a.x < W + 16 && a.x > -24 && a.y > -24 && a.y < H + 24 && a.age < 9);
+
+    if ((pickT -= dt) <= 0) {
+      pickT = rand(9, 14);
+      pickups.push({ x: rand(140, W - 30), y: rand(30, H - 44), type: pick(['gpu', 'ice', 'phone', 'jacket']), life: 7 });
+    }
+    for (const k of pickups) {
+      k.life -= dt;
+      if (Math.abs(k.x + 5 - (P.x + 8)) < 11 && Math.abs(k.y + 5 - (P.y + 13)) < 15) {
+        k.life = 0; bonus += 50;
+        const fy = P.y - 6;
+        if (k.type === 'gpu') { P.shield = 5; floater('GPU SHIELD!', P.x + 8, fy, '#9be22d'); SFX.pick(); }
+        else if (k.type === 'ice') { love = Math.max(0, love - 35); floater('COLD SHOULDER -35%', P.x + 8, fy, '#9fe6ff'); SFX.pick(); }
+        else if (k.type === 'phone') {
+          G.stun = 3.5; G.pull = 0; floater('WIFE CALLING!', P.x + 8, fy, '#5fe08a');
+          say('j', 'HI HONEY! JUST... CODING!', 3); SFX.ring();
+        } else { P.armor = 1; floater('LEATHER JACKET!', P.x + 8, fy, '#dddddd'); say('j', 'JACKET ON. HEART OFF.', 3); SFX.pick(); }
+        const cols = { gpu: '#9be22d', ice: '#9fe6ff', phone: '#5fe08a', jacket: '#888' };
+        burst(k.x + 5, k.y + 5, 10, [cols[k.type], '#fff']);
+      }
+    }
+    pickups = pickups.filter(k => k.life > 0);
+
+    // Trump: special guest bodyguard
+    trumpCD = Math.max(0, trumpCD - dt);
+    if (!TR && love >= 65 && trumpCD <= 0) {
+      TR = { x: W + 10, y: P.y, life: 6.5, phase: 'in', anim: 0, mid: false }; trumpCD = 40;
+      say('t', LINES.trumpIn, 3); banner = { s: 'SPECIAL GUEST!', life: 2 }; SFX.trump();
+    }
+    if (TR) {
+      TR.anim += dt * 8; TR.life -= dt;
+      const tx = Math.max(108, P.x - 21);
+      if (TR.phase === 'in') {
+        TR.x -= 170 * dt; TR.y += (P.y - TR.y) * Math.min(1, dt * 6);
+        if (TR.x <= tx) TR.phase = 'guard';
+      } else if (TR.phase === 'guard') {
+        TR.x += (tx - TR.x) * Math.min(1, dt * 8); TR.y += (P.y - TR.y) * Math.min(1, dt * 8);
+        if (!TR.mid && TR.life < 3.5) { TR.mid = true; say('t', pick(LINES.trump), 2); }
+        if (TR.life <= 0) { TR.phase = 'out'; say('t', 'SEE YOU AT THE HEARING!', 3); }
+      } else { TR.x += 150 * dt; if (TR.x > W + 20) { TR = null; if (talk && talk.who === 't') talk = null; } }
+    }
+
+    nvda *= 1 + (love < 40 ? .002 : -.003) * dt;
+    if (sinceHit > 2) love = Math.max(0, love - 4 * dt);
+    if (love >= 100) startFall();
+  } else if (state === 'fall') {
+    // LOVE TRAP: freeze -> he walks to her -> kiss -> lines -> game over
+    fallT += dt;
+    scn.flash = Math.max(0, scn.flash - dt);
+    if (TR) {
+      TR.anim += dt * 8;
+      TR.x += (G.x + 32 - TR.x) * Math.min(1, dt * 2.5); TR.y += (G.y + 3 - TR.y) * Math.min(1, dt * 2.5);
+    }
+    if (!scn.kiss) {
+      const tx = G.x + 9, ty = G.y + 4, dx = tx - P.x, dy = ty - P.y, d = Math.hypot(dx, dy);
+      if (fallT > .4 && !scn.said) { scn.said = true; say('g', 'FINALLY! ♥', 3); }
+      if (fallT > .8) {
+        const step = Math.max(80, d * 2.2) * dt;
+        if (d <= step) { P.x = tx; P.y = ty; P.moving = false; startKiss(); }
+        else { P.x += dx / d * step; P.y += dy / d * step; P.anim += dt * 9; P.moving = true; }
+      }
+      if ((heartT -= dt) <= 0) {
+        heartT = .08;
+        parts.push({ x: P.x + rand(0, 16), y: P.y + rand(-2, 6), vx: rand(-10, 10), vy: rand(-45, -25), life: 1.1, max: 1.1, kind: 'heart', c: Math.random() < .5 ? '#ff3b6b' : '#ff9ec4' });
+      }
+    } else {
+      scn.kiss += dt;
+      const kx = G.x + 13, ky = G.y + 10;
+      if ((heartT -= dt) <= 0) {
+        heartT = .05;
+        const side = Math.random() < .5 ? -1 : 1;   // spawn beside / above them so their faces stay visible
+        parts.push({ x: kx + side * rand(11, 20), y: ky + rand(-12, 16), vx: side * rand(4, 16), vy: rand(-40, -20), life: 1.6, max: 1.6, kind: 'heart', c: pick(['#ff3b6b', '#ff9ec4', '#ff5c86']), nog: true });
+      }
+      if ((scn.emoT -= dt) <= 0) {
+        scn.emoT = .22;
+        parts.push({ x: kx + rand(-18, 18), y: G.y - 6 + rand(-3, 2), vx: rand(-12, 12), vy: rand(-30, -16), life: 2.2, max: 2.2, kind: 'emoji', ch: pick(EMOJI), nog: true });
+      }
+      // scripted lines always replace the current bubble
+      if (!scn.l1 && scn.kiss > 1.2) { scn.l1 = true; talk = { who: 'j', s: '...MY GPUS WILL UNDERSTAND.', prio: 9, age: 0 }; }
+      if (TR && !scn.l2 && scn.kiss > 3) { scn.l2 = true; talk = { who: 't', s: 'FAKE NEWS!', prio: 9, age: 0 }; }
+      if (scn.kiss > (TR ? 4.4 : 3.3)) {
+        state = 'over'; overT = 0; SFX.over();
+        if (score() > best) { best = score(); try { localStorage.setItem('cupid-best', best); } catch (e) {} }
+      }
+    }
+  } else if (state === 'over') {
+    overT += dt; scn.kiss += dt;
+    if ((scn.emoT -= dt) <= 0) {
+      scn.emoT = .35;
+      parts.push({ x: rand(110, 210), y: 140, vx: rand(-8, 8), vy: rand(-28, -16), life: 3, max: 3, kind: 'emoji', ch: pick(EMOJI), nog: true, ui: true });
+    }
+  }
+
+  if (state !== 'pause') {
+    for (const q of parts) { q.life -= dt; q.x += q.vx * dt; q.y += q.vy * dt; q.vy += (q.nog ? -4 : 40) * dt; q.vx *= .98; }
+    parts = parts.filter(q => q.life > 0);
+    for (const f of floaters) { f.life -= dt * .8; f.y -= 16 * dt; }
+    floaters = floaters.filter(f => f.life > 0);
+    if (talk) talk.age += dt;
+    if (banner && (banner.life -= dt) <= 0) banner = null;
+    shake = Math.max(0, shake - dt * 20);
+  }
+}
+
+/* ---------------- draw ---------------- */
+function drawArrow(a) {
+  const sp = Math.hypot(a.vx, a.vy) || 1, dx = a.vx / sp, dy = a.vy / sp, nx = -dy, ny = dx;
+  const shaft = a.type === 'homing' ? '#ff7ad9' : a.type === 'defl' ? '#8b7d86' : '#9a5a2a';
+  for (let i = 2; i < 12; i++) pix(a.x - dx * i, a.y - dy * i, shaft);
+  const fx = a.x - dx * 11, fy = a.y - dy * 11;
+  pix(fx + nx * 1.6, fy + ny * 1.6, '#ff9ec4'); pix(fx - nx * 1.6, fy - ny * 1.6, '#ff9ec4');
+  pix(fx - dx * 1.5 + nx * 2.4, fy - dy * 1.5 + ny * 2.4, '#ffc2da'); pix(fx - dx * 1.5 - nx * 2.4, fy - dy * 1.5 - ny * 2.4, '#ffc2da');
+  if (a.type === 'fast') for (let i = 13; i < 20; i += 2) pix(a.x - dx * i, a.y - dy * i, '#ffffff88');
+  heart(a.x, a.y, a.type === 'defl' ? '#a89aa3' : a.type === 'homing' ? '#ff4fd0' : a.type === 'fast' ? '#ff1f45' : '#ff3b6b');
+}
+
+function drawJensen(x, y) {
+  const mood = (state === 'fall' || state === 'over') ? (scn.kiss > 0 ? 3 : 2) : P.flash > 0 ? 2 : love > 55 ? 1 : 0;
+  const f = P.moving ? (Math.floor(P.anim) % 2 ? 1 : 2) : 0;
+  ctx.drawImage(jensen(f, mood), Math.round(x), Math.round(y + (f ? 0 : Math.round(Math.sin(clock * 3) * .5))));
+}
+
+function drawShield() {
+  const cx = P.x + 8, cy = P.y + 13, r = 17;
+  const blink = P.shield < 1.2 && Math.floor(clock * 10) % 2;
+  if (blink) return;
+  for (let i = 0; i < 40; i++) {
+    const a = i / 40 * Math.PI * 2 + clock * 2;
+    pix(cx + Math.cos(a) * r, cy + Math.sin(a) * (r + 2), i % 3 ? '#9be22d' : '#e9ffc4');
+  }
+}
+
+function wrapText(s, n = 22) {
+  const out = []; let line = '';
+  for (const w of s.split(' ')) {
+    if ((line + ' ' + w).trim().length > n && line) { out.push(line); line = w; }
+    else line = (line + ' ' + w).trim();
+  }
+  if (line) out.push(line);
+  return out;
+}
+const BS = 6, BL = 9;   // bubble glyph size / line height (game px)
+function drawBubble(s, ax, ay, col, name, hgt = 30) {
+  const lines = wrapText(s.toUpperCase(), 18);
+  const w = Math.max(...lines.map(l => l.length)) * BS + 7, h = lines.length * BL + 6;
+  const x = Math.round(clamp(ax - w / 2, 2, W - w - 2));
+  let y = Math.round(ay - h - 6), below = false;
+  if (y < 22) { y = Math.round(ay + hgt + 3); below = true; }
+  const tx = Math.round(clamp(ax, x + 4, x + w - 6));
+  ctx.fillStyle = '#1a0b24'; ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
+  if (below) ctx.fillRect(tx - 1, y - 4, 4, 3); else ctx.fillRect(tx - 1, y + h + 1, 4, 3);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y, w, h);
+  if (below) ctx.fillRect(tx, y - 3, 2, 3); else ctx.fillRect(tx, y + h, 2, 3);
+  ctx.fillStyle = col; ctx.fillRect(x, y, w, 1);
+  // speaker name tag
+  const nw = name.length * 4 + 4;
+  ctx.fillStyle = col; ctx.fillRect(x + 2, y - 5, nw, 6);
+  drawStr(name, x + 4, y - 4, 4, '#ffffff');
+  lines.forEach((l, i) => drawStr(l, x + 4, y + 4 + i * BL, BS, col));
+}
+
+function drawHUD() {
+  ctx.fillStyle = 'rgba(20,8,35,.82)'; ctx.fillRect(0, 0, W, 14);
+  ctx.fillStyle = '#ff3b6b55'; ctx.fillRect(0, 14, W, 1);
+  txt('LOVE', 4, 5, 1, '#ff9ec4');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(22, 3, 84, 9);
+  ctx.fillStyle = '#3a1630'; ctx.fillRect(23, 4, 82, 7);
+  const w = Math.round(love / 100 * 80);
+  const hot = love > 70 && Math.floor(clock * 8) % 2;
+  ctx.fillStyle = hot ? '#ff9ec4' : '#ff3b6b'; ctx.fillRect(24, 5, w, 5);
+  ctx.fillStyle = '#ffb3c8'; ctx.fillRect(24, 5, w, 1);
+  const beat = Math.sin(clock * (4 + love / 10)) > .6;
+  bigHeart(110, beat ? 3 : 4, 1, '#ff3b6b');
+  txt('LV' + level, 124, 5, 1, '#c9b8ff');
+  txt('TIME ' + t.toFixed(1), 150, 5, 1, '#ffffff');
+  if (P.shield > 0) txt('SHIELD ' + Math.ceil(P.shield), 192, 5, 1, '#9be22d');
+  if (P.armor > 0) txt('JACKET', 228, 5, 1, '#dddddd');
+  txt('SCORE ' + score(), W - 4, 5, 1, '#ffe27a', 'r');
+  if (muted) txt('MUTE', W - 4, 17, 1, '#888', 'r');
+  // stock ticker
+  const ch = (nvda / 200 - 1) * 100, up = ch >= 0;
+  ctx.fillStyle = 'rgba(10,5,20,.78)'; ctx.fillRect(W - 82, H - 12, 80, 10);
+  txt('NVDA $' + nvda.toFixed(2) + ' ' + (up ? '▲' : '▼') + Math.abs(ch).toFixed(1) + '%', W - 5, H - 10, 1, up ? '#5fe08a' : '#ff5a6a', 'r');
+}
+
+function scene() {
+  ctx.drawImage(BG, 0, 0);
+  ctx.globalAlpha = .35;
+  for (const d of decor) heart(d.x, d.y, '#ffd0e0', false);
+  ctx.globalAlpha = .25;
+  for (let y = 18; y < FLOOR; y += 6) { ctx.fillStyle = '#ff9ec4'; ctx.fillRect(126, y, 1, 3); }
+  ctx.globalAlpha = 1;
+
+  for (const k of pickups) {
+    if (k.life < 2 && Math.floor(clock * 12) % 2) continue;
+    const bob = Math.round(Math.sin(clock * 4 + k.x) * 1.5);
+    ctx.drawImage(PICK_SPR[k.type], Math.round(k.x), Math.round(k.y + bob));
+  }
+
+  // shadows
+  ctx.fillStyle = 'rgba(10,20,60,.25)';
+  ctx.fillRect(Math.round(G.x + 3), Math.round(G.y + 29), 12, 2);
+  ctx.fillRect(Math.round(P.x + 2), Math.round(P.y + 25), 13, 2);
+
+  const isEnd = state === 'fall' || state === 'over';
+  if (isEnd) {                                    // dropped bow on the floor
+    const bx = Math.round(G.x + 13), by = Math.round(G.y + 28);
+    ctx.fillStyle = '#8a4b23'; ctx.fillRect(bx, by, 12, 1); ctx.fillRect(bx - 1, by - 1, 1, 1); ctx.fillRect(bx + 12, by - 1, 1, 1);
+    ctx.fillStyle = '#f5f0e6'; ctx.fillRect(bx, by - 1, 12, 1);
+  }
+  if (isEnd && scn.kiss > .25) heartRing(G.x + 15, G.y + 13, 1.25 + Math.sin(clock * 6) * .05, 200);
+  const girlImg = isEnd ? GIRL[scn.kiss > 0 ? 3 : 2] : GIRL[G.pull > 0 ? 1 : 0];
+  const drawGirl = () => ctx.drawImage(girlImg, Math.round(G.x), Math.round(G.y + (isEnd && !scn.kiss ? Math.round(Math.sin(clock * 8)) : 0)));
+  if (isEnd && scn.kiss > 0) { drawJensen(P.x, P.y); drawGirl(); }    // she leans in front of him
+  else {
+    drawGirl();
+    if (G.pull > 0 && Math.floor(clock * 16) % 2) heart(G.x + 9, G.y - 5, '#ff3b6b');
+    if (isEnd) bigHeart(G.x + 5, G.y - 10 + Math.sin(clock * 5) * 1.5, 1, '#ff3b6b');
+    if (!(P.inv > 0 && Math.floor(clock * 14) % 2) || state !== 'play') drawJensen(P.x, P.y);
+  }
+  if (P.shield > 0 && state === 'play') drawShield();
+  if (P.armor > 0 && state === 'play' && Math.floor(clock * 3) % 2) pix(P.x + 3, P.y + 13, '#ffffff');
+  if (G.stun > 0) ctx.drawImage(PHONE, Math.round(P.x + 15), Math.round(P.y + 4 + Math.sin(clock * 30)));
+  if (TR) {
+    ctx.fillStyle = 'rgba(10,20,60,.25)'; ctx.fillRect(Math.round(TR.x + 2), Math.round(TR.y + 26), 13, 2);
+    const walk = TR.phase !== 'guard' ? Math.round(Math.sin(TR.anim)) : 0;
+    const talking = talk && talk.who === 't' && talk.age < 1.5 && Math.floor(clock * 8) % 2;
+    ctx.drawImage(TRUMP[talking ? 1 : 0], Math.round(TR.x), Math.round(TR.y + walk));
+  }
+
+  for (const a of arrows) drawArrow(a);
+  drawParts(false);
+  for (const f of floaters) { ctx.globalAlpha = Math.min(1, f.life * 2); txt(f.s, f.x, f.y, 1.5, f.c, 'c'); }
+  ctx.globalAlpha = 1;
+}
+function drawParts(ui) {
+  for (const q of parts) {
+    if (!!q.ui !== ui) continue;
+    ctx.globalAlpha = Math.min(1, q.life / q.max * 1.5);
+    if (q.kind === 'heart') heart(q.x, q.y, q.c, false);
+    else if (q.kind === 'emoji') {
+      ctx.font = '8px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif';
+      ctx.textBaseline = 'middle'; ctx.fillText(q.ch, Math.round(q.x - 4), Math.round(q.y));
+    } else pix(q.x, q.y, q.c);
+  }
+  ctx.globalAlpha = 1;
+}
+/* pixel heart outline (classic heart curve) */
+function heartRing(cx, cy, s, n) {
+  for (let i = 0; i < n; i++) {
+    const t = i / n * Math.PI * 2, sx = Math.sin(t);
+    const fx = 16 * sx * sx * sx, fy = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+    pix(cx + fx * s, cy - fy * s, '#ff3b6b');
+    pix(cx + fx * s * .93, cy - fy * s * .93, '#ffb3c8');
+  }
+}
+/* camera: zooms in on the couple during the kiss */
+function camera() {
+  const ox = W / 2, oy = H / 2 + 6;
+  if ((state === 'fall' || state === 'over') && scn.kiss > 0) {
+    const e = Math.min(1, scn.kiss / .9), ez = e * e * (3 - 2 * e), z = 1 + .8 * ez;
+    const cx = clamp(G.x + (TR ? 22 : 15), W / (2 * z), W - W / (2 * z));
+    const cy = clamp(G.y + 15, oy / z, H - (H - oy) / z);
+    return { z, ox, oy, lx: ox + (cx - ox) * ez, ly: oy + (cy - oy) * ez };
+  }
+  return { z: 1, ox, oy, lx: ox, ly: oy };
+}
+const camPt = (x, y) => [(x - cam.lx) * cam.z + cam.ox, (y - cam.ly) * cam.z + cam.oy];
+function drawTalk() {
+  if (!talk) return;
+  const show = (s, x, y, col, name) => { const [sx, sy] = camPt(x, y); drawBubble(s, sx, sy, col, name, 30 * cam.z); };
+  if (talk.who === 'g') show(talk.s, G.x + 9, G.y, '#c8102e', 'HER');
+  else if (talk.who === 't' && TR) show(talk.s, TR.x + 8, TR.y, '#1f2a4d', 'TRUMP');
+  else if (talk.who === 'j') show(talk.s, P.x + 8, P.y, '#222222', 'JENSEN');
+}
+
+function dim(a) { ctx.fillStyle = `rgba(18,6,30,${a})`; ctx.fillRect(0, 0, W, H); }
+
+function drawTitle() {
+  ctx.drawImage(BG, 0, 0);
+  ctx.globalAlpha = .4; for (const d of decor) heart(d.x, d.y, '#ffd0e0', false); ctx.globalAlpha = 1;
+  dim(.25);
+  const wob = Math.round(Math.sin(clock * 3) * 2);
+  txt("CUPID'S ARROWS", W / 2, 10 + wob, 3, '#ff5c86', 'c', '#3a0d26');
+  txt('KEEP JENSEN FROM FALLING IN LOVE!', W / 2, 32, 1, '#ffffff', 'c');
+
+  ctx.drawImage(GIRL[Math.abs(Math.floor(clock * 1.5)) % 2], 22, 52, 72, 90);
+  ctx.drawImage(jensen(0, 0), 232, 64, 48, 78);
+  // flying title arrow
+  const ax = 100 + ((clock * 70) % 120);
+  const fake = { x: ax, y: 92 + Math.sin(clock * 5) * 4, vx: 1, vy: 0, type: 'n' };
+  drawArrow(fake);
+  txt('VS', W / 2, 70, 2, '#ffe27a', 'c');
+
+  ctx.drawImage(TRUMP[Math.abs(Math.floor(clock * 2)) % 2], 284, 88, 32, 54);
+  txt('GUEST!', 300, 80, 1, '#ffe592', 'c');
+
+  ctx.fillStyle = 'rgba(20,8,35,.75)'; ctx.fillRect(94, 104, 132, 42);
+  txt(isTouch ? 'D-PAD OR DRAG: MOVE' : 'ARROWS/WASD/D-PAD: MOVE', W / 2, 108, 1, '#c9b8ff', 'c');
+  txt('GPU=SHIELD  ICE=COOL DOWN', W / 2, 117, 1, '#9be22d', 'c');
+  txt('PHONE=WIFE  JACKET=ARMOR', W / 2, 126, 1, '#5fe08a', 'c');
+  txt(isTouch ? 'A START/PAUSE  B SOUND' : 'P PAUSE   M MUTE', W / 2, 135, 1, '#c9b8ff', 'c');
+  if (Math.floor(clock * 2) % 2) txt(isTouch ? 'TAP OR PRESS A TO START' : 'PRESS ENTER TO START', W / 2, 152, 1, '#ffe27a', 'c');
+  if (best) txt('BEST ' + best, W / 2, 164, 1, '#ff9ec4', 'c');
+}
+
+function drawOver() {
+  dim(Math.min(.78, overT * 1.5));
+  if (overT < .3) return;
+  txt('HE FELL IN LOVE!', W / 2, 12, 3, '#ff5c86', 'c', '#3a0d26');
+  // breaking news strip
+  ctx.fillStyle = '#b5121f'; ctx.fillRect(0, 33, W, 11);
+  ctx.fillStyle = '#ffe592'; ctx.fillRect(0, 33, 40, 11);
+  txt('BREAKING', 4, 36, 1, '#b5121f', 'l', null);
+  txt(ending, 44 + (W - 44) / 2, 36, 1, '#ffffff', 'c');
+  // the couple inside a beating heart frame
+  heartRing(W / 2, 88, 2.3 + Math.sin(clock * 5) * .06, 360);
+  ctx.drawImage(jensen(0, 3), W / 2 - 7, 70, 32, 52);
+  ctx.drawImage(GIRL[3], W / 2 - 25, 62, 48, 60);
+  drawParts(true);
+  // share card text
+  txt('I KEPT JENSEN', 58, 66, 1, '#ffffff', 'c');
+  txt('SINGLE FOR', 58, 75, 1, '#ffffff', 'c');
+  txt(t.toFixed(1) + 'S', 58, 86, 3, '#ffe27a', 'c');
+  txt('LEVEL ' + level, 58, 108, 1, '#c9b8ff', 'c');
+  const ch = (nvda / 200 - 1) * 100, up = ch >= 0;
+  txt('SCORE ' + score(), W - 20, 66, 1, '#ffe27a', 'r');
+  txt('BEST ' + best, W - 20, 76, 1, '#ff9ec4', 'r');
+  txt('NVDA $' + nvda.toFixed(2), W - 20, 90, 1, up ? '#5fe08a' : '#ff5a6a', 'r');
+  txt((up ? '▲' : '▼') + Math.abs(ch).toFixed(1) + '%', W - 20, 99, 1, up ? '#5fe08a' : '#ff5a6a', 'r');
+  if (score() >= best && score() > 0) txt('NEW BEST!', W - 20, 112, 1, '#9be22d', 'r');
+  txt('#SAVEJENSEN', W / 2, 142, 1, '#ff9ec4', 'c');
+  if (overT > .8) {
+    if (Math.floor(clock * 2) % 2) txt('ENTER / TAP: TRY AGAIN', 14, 155, 1, '#ffe27a');
+    const b = SAVE_BTN;
+    ctx.fillStyle = '#1a0b24'; ctx.fillRect(b.x - 1, b.y - 1, b.w + 2, b.h + 2);
+    ctx.fillStyle = '#ff3b6b'; ctx.fillRect(b.x, b.y, b.w, b.h);
+    txt(isTouch ? 'SAVE PIC' : 'S: SAVE PIC', b.x + b.w / 2, b.y + 4, 1, '#ffffff', 'c');
+  }
+}
+
+function draw() {
+  ctx.setTransform(R, 0, 0, R, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  if (state === 'title') { drawTitle(); return; }
+  cam = camera();
+  ctx.save();
+  if (shake > 0) ctx.translate(Math.round(rand(-shake, shake)), Math.round(rand(-shake, shake)));
+  ctx.translate(cam.ox, cam.oy); ctx.scale(cam.z, cam.z); ctx.translate(-cam.lx, -cam.ly);
+  scene();
+  ctx.restore();
+  if (scn.flash > 0) { ctx.fillStyle = `rgba(255,140,185,${Math.min(.75, scn.flash * 2.2)})`; ctx.fillRect(0, 0, W, H); }
+  drawHUD();
+  if (state === 'fall' && !scn.kiss && Math.floor(clock * 6) % 2) txt('TRAPPED!', W / 2, 30, 4, '#ff3b6b', 'c', '#3a0d26');
+  if (state === 'fall' && scn.kiss > 0 && scn.kiss < 2.5) txt('▼8%', W - 5, H - 22, 1.5, '#ff5a6a', 'r');
+  if (state === 'play' && t < 2.5) txt('DODGE THE LOVE ARROWS!', W / 2, 40, 2, '#ffe27a', 'c');
+  if (state === 'play' && level > 1 && t % 15 < 1.5) txt('LEVEL ' + level + '!', W / 2, 40, 2, '#ff9ec4', 'c');
+  if (state === 'play' && banner && Math.floor(clock * 8) % 2) txt(banner.s, W / 2, 58, 2, '#ffe592', 'c');
+  if (state !== 'over') drawTalk();
+  if (state === 'pause') { dim(.6); txt('PAUSED', W / 2, 75, 3, '#ffffff', 'c'); txt('PRESS P OR TAP TO RESUME', W / 2, 100, 1, '#c9b8ff', 'c'); }
+  if (state === 'over') drawOver();
+}
+
+let last = null;
+function loop(now) {
+  // the first rAF timestamp can be earlier than performance.now() at load, so never allow a negative step
+  const dt = last === null ? 0 : clamp((now - last) / 1000, 0, .05); last = now;
+  try { update(dt); draw(); } catch (e) { console.error(e); }   // a bad frame must never kill the loop
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
