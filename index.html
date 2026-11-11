@@ -30,8 +30,6 @@
     box-shadow:0 4px 10px rgba(0,0,0,.5),inset 0 -3px 0 rgba(0,0,0,.15);transition:transform .14s ease-out}
   #joy.on #knob{transition:none;background:radial-gradient(circle at 35% 30%,#ffd6e4,#ff6b93 55%,#c81e4f);
     box-shadow:0 0 16px #ff3b6b,inset 0 -3px 0 rgba(0,0,0,.2)}
-  /* phone held upright: the game is short, so the stick sits in the empty space below it */
-  body.portrait #joy{bottom:auto;top:calc(100% + 28px);right:4px;opacity:.85}
 
   /* ---- small round icon buttons (top-right, under the HUD) ---- */
   .ico{position:absolute;top:var(--hud);width:var(--ib);height:var(--ib);border-radius:50%;border:0;padding:0;
@@ -65,19 +63,15 @@ const cv = document.getElementById('g'), ctx = cv.getContext('2d');
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window || location.search.includes('pad');
 let scale = 1, R = 4;   // scale = CSS px per game pixel, R = canvas px per game pixel
 function fit() {
-  const portrait = innerHeight > innerWidth * 1.15;
-  document.body.classList.toggle('portrait', portrait);
-  // upright phones keep room under the game for the joystick
-  const ah = portrait ? Math.min(innerHeight - 16, innerHeight - 40 - Math.min(innerWidth * .42, 170)) : innerHeight - 16;
-  scale = Math.max(.5, Math.min((innerWidth - 16) / W, ah / H));
+  scale = Math.max(.5, Math.min((innerWidth - 16) / W, (innerHeight - 16) / H));
   const gw = Math.round(W * scale), gh = Math.round(H * scale);
   cv.style.width = gw + 'px';
   cv.style.height = gh + 'px';
-  // size the controls to the screen
-  const js = portrait ? clamp(innerWidth * .38, 110, 160) : clamp(Math.min(gw, gh) * .3, 96, 150);
+  // joystick always sits inside the game screen (bottom-right), sized to the screen's height
+  const js = gh < 300 ? clamp(gh * .42, 78, 110) : clamp(gh * .3, 96, 150);
   const st = document.documentElement.style;
   st.setProperty('--js', Math.round(js) + 'px');
-  st.setProperty('--jm', Math.round(js * .14) + 'px');
+  st.setProperty('--jm', Math.round(js * (gh < 300 ? .08 : .14)) + 'px');
   st.setProperty('--ib', Math.round(clamp(gh * .07, 24, 42)) + 'px');
   st.setProperty('--hud', Math.round(15 * scale + 6) + 'px');
   const r = clamp(Math.ceil(scale * (devicePixelRatio || 1)), 2, 6);
