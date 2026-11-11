@@ -570,7 +570,7 @@ function fire(kind) {
   burst(bx, by, 4, ['#ff9ec4', '#fff'], 30);
   SFX.shoot();
   if (LINES.special[kind]) say('g', LINES.special[kind], 2);
-  else if (Math.random() < .3) say('g', pick(LINES.girl), 1);
+  else if (Math.random() < .5) say('g', pick(LINES.girl), 1);
 }
 
 /* ---------------- update ---------------- */
@@ -714,6 +714,14 @@ function update(dt) {
         if (!TR.mid && TR.life < 3.5) { TR.mid = true; say('t', pick(LINES.trump), 2); }
         if (TR.life <= 0) { TR.phase = 'out'; say('t', 'SEE YOU AT THE HEARING!', 3); }
       } else { TR.x += 150 * dt; if (TR.x > W + 20) { TR = null; if (talk && talk.who === 't') talk = null; } }
+    }
+
+    // dialogue pacing: opening exchange, then keep the chatter going so a fresh quote is always on screen
+    if (!scn.introA && t > .5) { scn.introA = true; talk = { who: 'g', s: "JENSEN... TONIGHT YOU'RE MINE ♥", prio: 2, age: 0 }; }
+    else if (!scn.introB && t > 3) { scn.introB = true; talk = { who: 'j', s: 'NOT IF I CAN DODGE IT!', prio: 2, age: 0 }; }
+    else if (scn.introB && (!talk || talk.age > 3.5)) {
+      if (Math.random() < .6) say('g', pick(Math.random() < .7 ? LINES.girl : LINES.tease), 1);
+      else say('j', pick(LINES.dodge), 1);
     }
 
     nvda *= 1 + (love < 40 ? .002 : -.003) * dt;
